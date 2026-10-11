@@ -71,6 +71,13 @@ def flood_fill_background(img: Image.Image, threshold: int, feather: int) -> Ima
     return out
 
 
+def power_of_two(value: str) -> int:
+    n = int(value)
+    if n <= 0 or (n & (n - 1)) != 0:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a power of 2 (e.g. 16, 32, 64, 128)")
+    return n
+
+
 def write_model_json(path: Path, namespace: str, item_id: str) -> None:
     model = {
         "parent": "minecraft:item/generated",
@@ -87,6 +94,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=Path("output"), help="Root output directory")
     parser.add_argument("--threshold", type=int, default=240, help="Min R/G/B value (0-255) to count as background")
     parser.add_argument("--feather", type=int, default=0, help="Soft-alpha falloff band width near the threshold, for anti-aliased edges (0 = hard cutoff)")
+    parser.add_argument("--resize", type=power_of_two, default=None, help="Downscale the output to NxN pixels; N must be a power of 2 (e.g. 16, 32, 64, 128). Omit to keep the source resolution. The source file is never modified.")
     args = parser.parse_args()
 
     if not args.input.exists():
@@ -95,6 +103,9 @@ def main() -> int:
 
     img = Image.open(args.input)
     result = flood_fill_background(img, args.threshold, args.feather)
+
+    if args.resize is not None:
+        result = result.resize((args.resize, args.resize), Image.Resampling.LANCZOS)
 
     textures_dir = args.output_dir / "assets" / args.namespace / "textures" / "item"
     models_dir = args.output_dir / "assets" / args.namespace / "models" / "item"
