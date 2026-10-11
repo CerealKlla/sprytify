@@ -152,6 +152,32 @@ def border_to_black(img: Image.Image) -> Image.Image:
     return out
 
 
+def resize_preserving_alpha(img: Image.Image, size: int) -> Image.Image:
+    """Downscale an RGBA image without letting the alpha channel ring.
+
+    LANCZOS (used for its sharp, high-quality color downscaling) has negative
+    side-lobes: near a sharp transparent-to-opaque transition it can overshoot
+    past fully opaque AND undershoot back past fully transparent, producing a
+    spurious dip to alpha=0 a row or two past the real edge. Confirmed live on
+    a real test image: a 16x16 downscale had row 2's alpha at 0 despite rows 1
+    (alpha~1) and 3 (alpha~198) on either side both trending toward opaque --
+    one smooth transition became a fake double-edge. Combined with
+    --black-border (which paints any pixel bordering true alpha=0), that fake
+    dip was rendered as two separate black bars with a transparent gap between
+    them, instead of the source's single line.
+
+    Fix: resize color and alpha separately. RGB keeps LANCZOS for quality;
+    alpha uses BILINEAR, which is a convex combination of its inputs and so
+    can never overshoot/undershoot past the real source min/max -- no ringing.
+    """
+    img = img.convert("RGBA")
+    rgb = img.convert("RGB").resize((size, size), Image.Resampling.LANCZOS)
+    alpha = img.getchannel("A").resize((size, size), Image.Resampling.BILINEAR)
+    out = rgb.convert("RGBA")
+    out.putalpha(alpha)
+    return out
+
+
 def power_of_two(value: str) -> int:
     n = int(value)
     if n <= 0 or (n & (n - 1)) != 0:
@@ -191,7 +217,7 @@ def main() -> int:
     result = flood_fill_background(img, args.threshold, args.feather)
 
     if args.resize is not None:
-        result = result.resize((args.resize, args.resize), Image.Resampling.LANCZOS)
+        result = resize_preserving_alpha(result, args.resize)
 
     if args.black_border:
         result = border_to_black(result)
