@@ -30,6 +30,14 @@ Flood-fill starts from the four image edges and spreads inward through any backg
 an eye) that never touches the border survives untouched. `--feather` adds a soft-alpha falloff band
 near the threshold for anti-aliased edges instead of a hard cutoff; default is 0 (hard cutoff).
 
+`--resize N` downscales the flood-filled output to an N×N square (LANCZOS) before saving -- N
+must be a power of 2 (16, 32, 64, 128, ...) or the tool exits with an error; any other value is
+rejected rather than silently rounded. Optional -- omitting it keeps the source resolution. The
+source file itself is never modified, only the generated output copy. Minecraft item icons need a
+square, power-of-two texture to render/mip cleanly through `item/generated`; author source art at a
+larger size for clean edges, then use `--resize` to downscale to the real in-game resolution (16 to
+match vanilla, higher for an intentionally higher-res resource-pack look).
+
 ## Status
 
 Built 2026-10-11. Core flood-fill + model-JSON generation implemented; not yet used on a real asset
