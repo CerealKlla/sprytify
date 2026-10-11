@@ -221,6 +221,24 @@ def write_model_json(path: Path, namespace: str, item_id: str) -> None:
     path.write_text(json.dumps(model, indent=2) + "\n", encoding="utf-8")
 
 
+def write_item_definition_json(path: Path, namespace: str, item_id: str) -> None:
+    """The top-level `assets/<namespace>/items/<item_id>.json` Minecraft's item-model-definition
+    system requires (separate from the model file itself, which lives under `models/item/`) --
+    the file that actually binds a real registered item id to its model. A model with no matching
+    item-definition file is effectively unreachable in-game; centralizing this here (gated behind
+    --item-definition, since not every output is meant to map 1:1 onto a single real item id -- e.g.
+    a select-model's many per-case sub-icons shouldn't each get their own top-level definition) means
+    this exact small, easy-to-typo JSON shape never needs hand-authoring again.
+    """
+    definition = {
+        "model": {
+            "type": "minecraft:model",
+            "model": f"{namespace}:item/{item_id}",
+        }
+    }
+    path.write_text(json.dumps(definition, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="Source PNG with a white/near-white background")
@@ -237,6 +255,7 @@ def main() -> int:
     parser.add_argument("--black-border", action="store_true", help="Force every partially-transparent (antialiased border) pixel to opaque black, regardless of its original color -- gives the icon a solid black outline. Runs before --solidify-black/--snap-alpha, so combining them is redundant (no partially-transparent pixels will be left for those to act on).")
     parser.add_argument("--overlay", type=Path, default=None, help="Optional second PNG to composite centered on top of the base, after all other processing. Its own background is NOT flood-filled -- pass an already-transparent source (e.g. a vanilla Minecraft item texture).")
     parser.add_argument("--overlay-scale", type=float, default=1.0, help="Fraction (0-1+) of the base's size the overlay's longest side should occupy once centered (default 1.0 = same size as the base canvas)")
+    parser.add_argument("--item-definition", action="store_true", help="Also write the top-level assets/<namespace>/items/<item_id>.json Minecraft's item-model-definition system requires to actually bind a real item id to the generated model (a plain 'minecraft:model' wrapper pointing at it). Optional -- off by default, since a one-off model meant to be referenced from a hand-authored select-model (multiple icons sharing one real item id) shouldn't each get their own top-level definition file.")
     args = parser.parse_args()
 
     if not args.input.exists():
@@ -278,6 +297,14 @@ def main() -> int:
 
     print(f"wrote texture: {texture_path}")
     print(f"wrote model:   {model_path}")
+
+    if args.item_definition:
+        items_dir = args.output_dir / "assets" / args.namespace / "items"
+        items_dir.mkdir(parents=True, exist_ok=True)
+        item_definition_path = items_dir / f"{args.item_id}.json"
+        write_item_definition_json(item_definition_path, args.namespace, args.item_id)
+        print(f"wrote item definition: {item_definition_path}")
+
     return 0
 
 
