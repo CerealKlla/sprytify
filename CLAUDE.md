@@ -75,6 +75,16 @@ Confirmed live on a real test image: a 16x16 downscale had two whole interior ro
 painted them as fake extra lines partway into the icon. The neighbor-adjacency check fixes this by
 only touching pixels that genuinely border real transparency.
 
+`--overlay PATH` composites a second PNG centered on top of the base, after every other processing
+step (flood-fill, resize, black-border, solidify-black, snap-alpha) -- so none of those effects ever
+touch the overlay's own pixels. The overlay is NOT flood-filled itself; pass an already-transparent
+source (a vanilla Minecraft item texture already has real alpha, which is the expected use case --
+e.g. stamping `assets/minecraft/textures/item/wooden_sword.png` onto a custom base icon). It's resized
+with NEAREST rather than LANCZOS so pixel-art sources stay crisp instead of blurring.
+`--overlay-scale` (default 1.0) controls what fraction of the base canvas's size the overlay's
+longest side should occupy once centered -- 1.0 means same size as the base (exact overlap for two
+16x16 sources), smaller values shrink the overlay into a badge/corner-icon look.
+
 ## Status
 
 Built 2026-10-11. Core flood-fill + model-JSON generation implemented; not yet used on a real asset
