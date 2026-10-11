@@ -178,6 +178,34 @@ def resize_preserving_alpha(img: Image.Image, size: int) -> Image.Image:
     return out
 
 
+def overlay_centered(base: Image.Image, overlay: Image.Image, scale: float) -> Image.Image:
+    """Alpha-composite `overlay` centered on top of `base`.
+
+    `overlay` is resized (preserving its own aspect ratio, NEAREST so a pixel
+    -art source like a vanilla item texture doesn't get blurred) so its
+    longest side is `scale` fraction of base's matching dimension, then
+    centered and composited with full alpha blending -- transparent overlay
+    pixels let the base show through untouched.
+    """
+    base = base.convert("RGBA")
+    overlay = overlay.convert("RGBA")
+    base_w, base_h = base.size
+    ov_w, ov_h = overlay.size
+
+    target_long_side = max(base_w, base_h) * scale
+    ov_scale = target_long_side / max(ov_w, ov_h)
+    new_w = max(1, round(ov_w * ov_scale))
+    new_h = max(1, round(ov_h * ov_scale))
+    if (new_w, new_h) != (ov_w, ov_h):
+        overlay = overlay.resize((new_w, new_h), Image.Resampling.NEAREST)
+
+    out = base.copy()
+    paste_x = (base_w - new_w) // 2
+    paste_y = (base_h - new_h) // 2
+    out.alpha_composite(overlay, (paste_x, paste_y))
+    return out
+
+
 def power_of_two(value: str) -> int:
     n = int(value)
     if n <= 0 or (n & (n - 1)) != 0:
@@ -207,6 +235,8 @@ def main() -> int:
     parser.add_argument("--snap-alpha", action="store_true", help="Snap every partially-transparent pixel to fully opaque or fully transparent, regardless of color -- removes all antialiased edge fringing (not just black), for a crisp hard-edged silhouette.")
     parser.add_argument("--snap-alpha-threshold", type=int, default=128, help="Alpha value (0-255) at/above which a partially-transparent pixel becomes opaque instead of transparent, for --snap-alpha (default 128)")
     parser.add_argument("--black-border", action="store_true", help="Force every partially-transparent (antialiased border) pixel to opaque black, regardless of its original color -- gives the icon a solid black outline. Runs before --solidify-black/--snap-alpha, so combining them is redundant (no partially-transparent pixels will be left for those to act on).")
+    parser.add_argument("--overlay", type=Path, default=None, help="Optional second PNG to composite centered on top of the base, after all other processing. Its own background is NOT flood-filled -- pass an already-transparent source (e.g. a vanilla Minecraft item texture).")
+    parser.add_argument("--overlay-scale", type=float, default=1.0, help="Fraction (0-1+) of the base's size the overlay's longest side should occupy once centered (default 1.0 = same size as the base canvas)")
     args = parser.parse_args()
 
     if not args.input.exists():
@@ -227,6 +257,13 @@ def main() -> int:
 
     if args.snap_alpha:
         result = snap_alpha(result, args.snap_alpha_threshold)
+
+    if args.overlay is not None:
+        if not args.overlay.exists():
+            print(f"error: overlay file not found: {args.overlay}", file=sys.stderr)
+            return 1
+        overlay_img = Image.open(args.overlay)
+        result = overlay_centered(result, overlay_img, args.overlay_scale)
 
     textures_dir = args.output_dir / "assets" / args.namespace / "textures" / "item"
     models_dir = args.output_dir / "assets" / args.namespace / "models" / "item"
