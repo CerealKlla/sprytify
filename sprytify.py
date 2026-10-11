@@ -213,6 +213,19 @@ def power_of_two(value: str) -> int:
     return n
 
 
+def power_of_two_list(value: str) -> list[int]:
+    """Parses a comma-separated list of power-of-two sizes, e.g. '16,32,64,128'."""
+    sizes = [power_of_two(part.strip()) for part in value.split(",") if part.strip()]
+    if not sizes:
+        raise argparse.ArgumentTypeError("--resolutions needs at least one size")
+    return sorted(set(sizes))
+
+
+def write_pack_mcmeta(path: Path, pack_format: int, description: str) -> None:
+    meta = {"pack": {"pack_format": pack_format, "description": description}}
+    path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+
+
 def write_model_json(path: Path, namespace: str, item_id: str) -> None:
     model = {
         "parent": "minecraft:item/generated",
@@ -239,6 +252,73 @@ def write_item_definition_json(path: Path, namespace: str, item_id: str) -> None
     path.write_text(json.dumps(definition, indent=2) + "\n", encoding="utf-8")
 
 
+def process(base: Image.Image, args, size: int | None) -> Image.Image:
+    """Runs the full edge-cleanup/resize/overlay pipeline once, at a given target `size` (or
+    `None` to keep the source resolution) -- shared by both the single-resolution and
+    --resolutions (multi-resolution) code paths so there is exactly one place this logic lives.
+    """
+    result = base
+    if size is not None:
+        result = resize_preserving_alpha(result, size)
+    if args.black_border:
+        result = border_to_black(result)
+    if args.solidify_black:
+        result = solidify_black(result, args.solidify_black_threshold)
+    if args.snap_alpha:
+        result = snap_alpha(result, args.snap_alpha_threshold)
+    if args.overlay is not None:
+        overlay_img = Image.open(args.overlay)
+        result = overlay_centered(result, overlay_img, args.overlay_scale)
+    return result
+
+
+def write_base_output(result: Image.Image, output_dir: Path, namespace: str, item_id: str, item_definition: bool) -> None:
+    """Writes texture + model (+ optional item-definition) straight into the mod-resources shape
+    -- the lowest/default resolution's own output, meant to be copied into a mod's
+    src/main/resources directly (unchanged from Sprytify's original single-resolution behavior).
+    """
+    textures_dir = output_dir / "assets" / namespace / "textures" / "item"
+    models_dir = output_dir / "assets" / namespace / "models" / "item"
+    textures_dir.mkdir(parents=True, exist_ok=True)
+    models_dir.mkdir(parents=True, exist_ok=True)
+
+    texture_path = textures_dir / f"{item_id}.png"
+    model_path = models_dir / f"{item_id}.json"
+    result.save(texture_path)
+    write_model_json(model_path, namespace, item_id)
+    print(f"wrote texture: {texture_path}")
+    print(f"wrote model:   {model_path}")
+
+    if item_definition:
+        items_dir = output_dir / "assets" / namespace / "items"
+        items_dir.mkdir(parents=True, exist_ok=True)
+        item_definition_path = items_dir / f"{item_id}.json"
+        write_item_definition_json(item_definition_path, namespace, item_id)
+        print(f"wrote item definition: {item_definition_path}")
+
+
+def write_resource_pack_override(
+    result: Image.Image, output_dir: Path, namespace: str, item_id: str, size: int, pack_format: int
+) -> None:
+    """Writes ONLY a texture PNG into a standalone `resourcepack_<N>x/` folder -- a real,
+    independently-distributable Minecraft resource pack (gets its own auto-generated
+    `pack.mcmeta`) that overrides just this one texture path. A resource pack only needs to
+    supply the files it wants to change; the model/item-definition JSON stay inherited from
+    whatever the mod itself ships (the base/default resolution's output), so neither is
+    duplicated here -- this is the same mechanism any "HD texture pack" uses for vanilla items,
+    applied to a modded one. `pack.mcmeta` is rewritten (idempotently) on every call so repeated
+    invocations across many items for the same pack folder all converge correctly.
+    """
+    pack_dir = output_dir / f"resourcepack_{size}x"
+    textures_dir = pack_dir / "assets" / namespace / "textures" / "item"
+    textures_dir.mkdir(parents=True, exist_ok=True)
+
+    texture_path = textures_dir / f"{item_id}.png"
+    result.save(texture_path)
+    write_pack_mcmeta(pack_dir / "pack.mcmeta", pack_format, f"{namespace} {size}x{size} icon overrides")
+    print(f"wrote {size}x{size} override: {texture_path}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="Source PNG with a white/near-white background")
@@ -247,7 +327,9 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=Path("output"), help="Root output directory")
     parser.add_argument("--threshold", type=int, default=240, help="Min R/G/B value (0-255) to count as background")
     parser.add_argument("--feather", type=int, default=0, help="Soft-alpha falloff band width near the threshold, for anti-aliased edges (0 = hard cutoff)")
-    parser.add_argument("--resize", type=power_of_two, default=None, help="Downscale the output to NxN pixels; N must be a power of 2 (e.g. 16, 32, 64, 128). Omit to keep the source resolution. The source file is never modified.")
+    parser.add_argument("--resize", type=power_of_two, default=None, help="Downscale the output to NxN pixels; N must be a power of 2 (e.g. 16, 32, 64, 128). Omit to keep the source resolution. The source file is never modified. Mutually exclusive with --resolutions.")
+    parser.add_argument("--resolutions", type=power_of_two_list, default=None, help="Comma-separated list of power-of-2 sizes to generate all at once, e.g. '16,32,64,128'. The SMALLEST is treated as the mod's own default/base output (texture + model, same shape as --resize); every larger size is written as its own standalone resource-pack folder (resourcepack_<N>x/, with an auto-generated pack.mcmeta) that overrides just that texture -- the correct, standard way to offer higher-resolution art without forcing it on every player. Mutually exclusive with --resize.")
+    parser.add_argument("--pack-format", type=int, default=84, help="pack_format value written into each generated resourcepack_<N>x/pack.mcmeta (default 84, this environment's current resource pack format -- see net.minecraft.SharedConstants.RESOURCE_PACK_FORMAT_MAJOR). Bump this via the flag, not code, whenever the target Minecraft version's format changes.")
     parser.add_argument("--solidify-black", action="store_true", help="Snap any dark, partially-transparent pixel (faded black edges from anti-aliasing) to fully opaque black, for crisper line art.")
     parser.add_argument("--solidify-black-threshold", type=int, default=64, help="Max R/G/B value (0-255) for a pixel to count as 'black-ish' for --solidify-black (default 64)")
     parser.add_argument("--snap-alpha", action="store_true", help="Snap every partially-transparent pixel to fully opaque or fully transparent, regardless of color -- removes all antialiased edge fringing (not just black), for a crisp hard-edged silhouette.")
@@ -261,50 +343,30 @@ def main() -> int:
     if not args.input.exists():
         print(f"error: input file not found: {args.input}", file=sys.stderr)
         return 1
+    if args.resize is not None and args.resolutions is not None:
+        print("error: --resize and --resolutions are mutually exclusive", file=sys.stderr)
+        return 1
+    if args.overlay is not None and not args.overlay.exists():
+        print(f"error: overlay file not found: {args.overlay}", file=sys.stderr)
+        return 1
 
     img = Image.open(args.input)
-    result = flood_fill_background(img, args.threshold, args.feather)
+    base = flood_fill_background(img, args.threshold, args.feather)
 
-    if args.resize is not None:
-        result = resize_preserving_alpha(result, args.resize)
+    if args.resolutions is not None:
+        base_size, *pack_sizes = args.resolutions
+        write_base_output(
+            process(base, args, base_size), args.output_dir, args.namespace, args.item_id, args.item_definition
+        )
+        for size in pack_sizes:
+            write_resource_pack_override(
+                process(base, args, size), args.output_dir, args.namespace, args.item_id, size, args.pack_format
+            )
+        return 0
 
-    if args.black_border:
-        result = border_to_black(result)
-
-    if args.solidify_black:
-        result = solidify_black(result, args.solidify_black_threshold)
-
-    if args.snap_alpha:
-        result = snap_alpha(result, args.snap_alpha_threshold)
-
-    if args.overlay is not None:
-        if not args.overlay.exists():
-            print(f"error: overlay file not found: {args.overlay}", file=sys.stderr)
-            return 1
-        overlay_img = Image.open(args.overlay)
-        result = overlay_centered(result, overlay_img, args.overlay_scale)
-
-    textures_dir = args.output_dir / "assets" / args.namespace / "textures" / "item"
-    models_dir = args.output_dir / "assets" / args.namespace / "models" / "item"
-    textures_dir.mkdir(parents=True, exist_ok=True)
-    models_dir.mkdir(parents=True, exist_ok=True)
-
-    texture_path = textures_dir / f"{args.item_id}.png"
-    model_path = models_dir / f"{args.item_id}.json"
-
-    result.save(texture_path)
-    write_model_json(model_path, args.namespace, args.item_id)
-
-    print(f"wrote texture: {texture_path}")
-    print(f"wrote model:   {model_path}")
-
-    if args.item_definition:
-        items_dir = args.output_dir / "assets" / args.namespace / "items"
-        items_dir.mkdir(parents=True, exist_ok=True)
-        item_definition_path = items_dir / f"{args.item_id}.json"
-        write_item_definition_json(item_definition_path, args.namespace, args.item_id)
-        print(f"wrote item definition: {item_definition_path}")
-
+    write_base_output(
+        process(base, args, args.resize), args.output_dir, args.namespace, args.item_id, args.item_definition
+    )
     return 0
 
 
