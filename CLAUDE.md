@@ -48,10 +48,16 @@ must be (max R/G/B value) to count as "black-ish." Applied after any resize.
 touches near-black pixels by design, so a faded edge on a *colored* shape's own silhouette (not
 black line art) survives it untouched. `--snap-alpha` instead snaps every partially-transparent
 pixel to fully opaque (color kept as-is) or fully transparent, based on whether its alpha is at/above
-`--snap-alpha-threshold` (default 128). Applied last, after `--solidify-black`, so any pixel that
-flag already resolved to solid black is left alone. Use this whenever any fringing remains after
+`--snap-alpha-threshold` (default 128). Use this whenever any fringing remains after
 `--solidify-black` alone -- confirmed via a real test image (a blueprint icon with a blue silhouette
 fill) where antialiasing left faded *blue* edge pixels that the black-only check correctly skipped.
+
+`--black-border` takes a different stance on the same antialiased-edge-pixel set: instead of keeping
+each pixel's blended color (what `--snap-alpha` does), it forces every partially-transparent pixel to
+opaque black outright, regardless of its own color -- giving the icon a defined black outline rather
+than a color-accurate hard edge. Applied first, before `--solidify-black`/`--snap-alpha`, since it
+already resolves every partially-transparent pixel to fully opaque -- combining it with either of the
+other two is a no-op for them (nothing partially-transparent will be left).
 
 ## Status
 
