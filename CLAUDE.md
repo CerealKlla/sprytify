@@ -53,11 +53,18 @@ pixel to fully opaque (color kept as-is) or fully transparent, based on whether 
 fill) where antialiasing left faded *blue* edge pixels that the black-only check correctly skipped.
 
 `--black-border` takes a different stance on the same antialiased-edge-pixel set: instead of keeping
-each pixel's blended color (what `--snap-alpha` does), it forces every partially-transparent pixel to
+each pixel's blended color (what `--snap-alpha` does), it forces every partially-transparent pixel
+that's actually adjacent to real transparency (alpha==0, checked via its 8-connected neighbors) to
 opaque black outright, regardless of its own color -- giving the icon a defined black outline rather
-than a color-accurate hard edge. Applied first, before `--solidify-black`/`--snap-alpha`, since it
-already resolves every partially-transparent pixel to fully opaque -- combining it with either of the
-other two is a no-op for them (nothing partially-transparent will be left).
+than a color-accurate hard edge. Applied first, before `--solidify-black`/`--snap-alpha`.
+
+Deliberately **not** a blanket "any pixel with 0 < alpha < 255" check (an earlier version was, and it
+was wrong) -- LANCZOS resampling (`--resize`) has negative side-lobes/ringing that can leave pixels
+at alpha~250-252 several pixels away from any real edge, sandwiched between fully-opaque neighbors.
+Confirmed live on a real test image: a 16x16 downscale had two whole interior rows at alpha~251 with
+255-ish neighbors on both sides -- not a border, a resampling artifact -- and the blanket check
+painted them as fake extra lines partway into the icon. The neighbor-adjacency check fixes this by
+only touching pixels that genuinely border real transparency.
 
 ## Status
 
