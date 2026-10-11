@@ -85,7 +85,22 @@ with NEAREST rather than LANCZOS so pixel-art sources stay crisp instead of blur
 longest side should occupy once centered -- 1.0 means same size as the base (exact overlap for two
 16x16 sources), smaller values shrink the overlay into a badge/corner-icon look.
 
+`--item-definition` also writes `assets/<namespace>/items/<item_id>.json` -- the top-level
+item-model-definition file Minecraft's newer item-model system actually needs to bind a real
+registered item id to the generated model (a plain `{"model": {"type": "minecraft:model", "model":
+"<namespace>:item/<item_id>"}}` wrapper). Without this file a generated model is unreachable in-game
+even if the texture/model themselves are fine -- confirmed the hard way, this exact shape was
+hand-authored once already for Lyfe's Research Notes before being centralized here. **Off by
+default** -- deliberately opt-in, since a model meant to be one case inside a hand-authored
+`minecraft:select` model (e.g. Research Notes' 62 per-target icons, which all share ONE real item id
+switched by a data component) must NOT each get their own top-level definition file; only pass this
+flag for a plain one-model-per-item-id case.
+
 ## Status
 
-Built 2026-10-11. Core flood-fill + model-JSON generation implemented; not yet used on a real asset
-in any mod.
+Built 2026-10-11. Flood-fill, resize, edge-cleanup (`--solidify-black`/`--snap-alpha`/
+`--black-border`), `--overlay`, and `--item-definition` all implemented and tested against real
+source art. First real-mod use: Lyfe's 62 Research Note icons (see Lyfe's own
+`context/classes/CraftingOverhaul.md`), generated via direct CLI calls -- that use case predates
+`--item-definition` and used a hand-authored `minecraft:select` model instead, so it doesn't exercise
+this flag.
