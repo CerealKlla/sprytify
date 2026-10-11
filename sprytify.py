@@ -91,6 +91,26 @@ def solidify_black(img: Image.Image, rgb_threshold: int) -> Image.Image:
     return out
 
 
+def snap_alpha(img: Image.Image, alpha_threshold: int) -> Image.Image:
+    """Snap every partially-transparent pixel to fully opaque or fully transparent.
+
+    Unlike solidify_black, this is color-agnostic: it fixes antialiased edge
+    fringing on ANY shape (not just black line art), e.g. a faded colored edge
+    left over from downscaling or from the source art's own antialiasing.
+    Pixels with alpha >= threshold become fully opaque (color unchanged);
+    pixels below it become fully transparent.
+    """
+    out = img.convert("RGBA").copy()
+    pixels = out.load()
+    width, height = out.size
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = pixels[x, y]
+            if 0 < a < 255:
+                pixels[x, y] = (r, g, b, 255) if a >= alpha_threshold else (r, g, b, 0)
+    return out
+
+
 def power_of_two(value: str) -> int:
     n = int(value)
     if n <= 0 or (n & (n - 1)) != 0:
@@ -117,6 +137,8 @@ def main() -> int:
     parser.add_argument("--resize", type=power_of_two, default=None, help="Downscale the output to NxN pixels; N must be a power of 2 (e.g. 16, 32, 64, 128). Omit to keep the source resolution. The source file is never modified.")
     parser.add_argument("--solidify-black", action="store_true", help="Snap any dark, partially-transparent pixel (faded black edges from anti-aliasing) to fully opaque black, for crisper line art.")
     parser.add_argument("--solidify-black-threshold", type=int, default=64, help="Max R/G/B value (0-255) for a pixel to count as 'black-ish' for --solidify-black (default 64)")
+    parser.add_argument("--snap-alpha", action="store_true", help="Snap every partially-transparent pixel to fully opaque or fully transparent, regardless of color -- removes all antialiased edge fringing (not just black), for a crisp hard-edged silhouette.")
+    parser.add_argument("--snap-alpha-threshold", type=int, default=128, help="Alpha value (0-255) at/above which a partially-transparent pixel becomes opaque instead of transparent, for --snap-alpha (default 128)")
     args = parser.parse_args()
 
     if not args.input.exists():
@@ -131,6 +153,9 @@ def main() -> int:
 
     if args.solidify_black:
         result = solidify_black(result, args.solidify_black_threshold)
+
+    if args.snap_alpha:
+        result = snap_alpha(result, args.snap_alpha_threshold)
 
     textures_dir = args.output_dir / "assets" / args.namespace / "textures" / "item"
     models_dir = args.output_dir / "assets" / args.namespace / "models" / "item"
