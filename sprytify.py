@@ -111,6 +111,26 @@ def snap_alpha(img: Image.Image, alpha_threshold: int) -> Image.Image:
     return out
 
 
+def border_to_black(img: Image.Image) -> Image.Image:
+    """Force every partially-transparent (border/antialiased) pixel to opaque black.
+
+    Any pixel with alpha strictly between 0 and 255 is, by construction, an
+    edge pixel -- somewhere a flood-filled/antialiased boundary blended the
+    shape's color toward transparent. This ignores whatever color it blended
+    toward and just makes the whole border solid black, regardless of the
+    shape's own color(s) -- giving a clean black outline around the icon.
+    """
+    out = img.convert("RGBA").copy()
+    pixels = out.load()
+    width, height = out.size
+    for y in range(height):
+        for x in range(width):
+            _, _, _, a = pixels[x, y]
+            if 0 < a < 255:
+                pixels[x, y] = (0, 0, 0, 255)
+    return out
+
+
 def power_of_two(value: str) -> int:
     n = int(value)
     if n <= 0 or (n & (n - 1)) != 0:
@@ -139,6 +159,7 @@ def main() -> int:
     parser.add_argument("--solidify-black-threshold", type=int, default=64, help="Max R/G/B value (0-255) for a pixel to count as 'black-ish' for --solidify-black (default 64)")
     parser.add_argument("--snap-alpha", action="store_true", help="Snap every partially-transparent pixel to fully opaque or fully transparent, regardless of color -- removes all antialiased edge fringing (not just black), for a crisp hard-edged silhouette.")
     parser.add_argument("--snap-alpha-threshold", type=int, default=128, help="Alpha value (0-255) at/above which a partially-transparent pixel becomes opaque instead of transparent, for --snap-alpha (default 128)")
+    parser.add_argument("--black-border", action="store_true", help="Force every partially-transparent (antialiased border) pixel to opaque black, regardless of its original color -- gives the icon a solid black outline. Runs before --solidify-black/--snap-alpha, so combining them is redundant (no partially-transparent pixels will be left for those to act on).")
     args = parser.parse_args()
 
     if not args.input.exists():
@@ -150,6 +171,9 @@ def main() -> int:
 
     if args.resize is not None:
         result = result.resize((args.resize, args.resize), Image.Resampling.LANCZOS)
+
+    if args.black_border:
+        result = border_to_black(result)
 
     if args.solidify_black:
         result = solidify_black(result, args.solidify_black_threshold)
