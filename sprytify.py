@@ -112,22 +112,43 @@ def snap_alpha(img: Image.Image, alpha_threshold: int) -> Image.Image:
 
 
 def border_to_black(img: Image.Image) -> Image.Image:
-    """Force every partially-transparent (border/antialiased) pixel to opaque black.
+    """Force partially-transparent pixels that actually border transparency to opaque black.
 
-    Any pixel with alpha strictly between 0 and 255 is, by construction, an
-    edge pixel -- somewhere a flood-filled/antialiased boundary blended the
-    shape's color toward transparent. This ignores whatever color it blended
-    toward and just makes the whole border solid black, regardless of the
-    shape's own color(s) -- giving a clean black outline around the icon.
+    A naive "any pixel with 0 < alpha < 255" check is too broad: resampling
+    filters like LANCZOS (used by --resize) have negative side-lobes/ringing,
+    which can leave pixels alpha=250-252 even many pixels away from any real
+    edge, with fully-opaque (alpha 254-255) neighbors on both sides -- not a
+    border at all, just a resampling artifact. Confirmed this live: a 16x16
+    downscale of a real test image had two whole interior rows at alpha~251
+    sandwiched between alpha~255 rows, which a blanket check painted as fake
+    extra black lines partway into the icon.
+
+    This only recolors a partially-transparent pixel if at least one of its
+    8-connected neighbors is *fully* transparent (alpha == 0) -- i.e. it's
+    actually adjacent to real background/a real cutout, not just a resampling
+    dip. Neighbor lookups read from the original (pre-recolor) pixel data so
+    the result doesn't depend on scan order.
     """
-    out = img.convert("RGBA").copy()
-    pixels = out.load()
+    src = img.convert("RGBA")
+    out = src.copy()
+    src_pixels = src.load()
+    out_pixels = out.load()
     width, height = out.size
     for y in range(height):
         for x in range(width):
-            _, _, _, a = pixels[x, y]
-            if 0 < a < 255:
-                pixels[x, y] = (0, 0, 0, 255)
+            _, _, _, a = src_pixels[x, y]
+            if not (0 < a < 255):
+                continue
+            borders_transparent = False
+            for ny in range(max(0, y - 1), min(height, y + 2)):
+                for nx in range(max(0, x - 1), min(width, x + 2)):
+                    if (nx, ny) != (x, y) and src_pixels[nx, ny][3] == 0:
+                        borders_transparent = True
+                        break
+                if borders_transparent:
+                    break
+            if borders_transparent:
+                out_pixels[x, y] = (0, 0, 0, 255)
     return out
 
 
