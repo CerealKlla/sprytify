@@ -30,13 +30,22 @@ Flood-fill starts from the four image edges and spreads inward through any backg
 an eye) that never touches the border survives untouched. `--feather` adds a soft-alpha falloff band
 near the threshold for anti-aliased edges instead of a hard cutoff; default is 0 (hard cutoff).
 
-`--resize N` downscales the flood-filled output to an N×N square (LANCZOS) before saving -- N
-must be a power of 2 (16, 32, 64, 128, ...) or the tool exits with an error; any other value is
-rejected rather than silently rounded. Optional -- omitting it keeps the source resolution. The
-source file itself is never modified, only the generated output copy. Minecraft item icons need a
-square, power-of-two texture to render/mip cleanly through `item/generated`; author source art at a
-larger size for clean edges, then use `--resize` to downscale to the real in-game resolution (16 to
-match vanilla, higher for an intentionally higher-res resource-pack look).
+`--resize N` downscales the flood-filled output to an N×N square before saving -- N must be a
+power of 2 (16, 32, 64, 128, ...) or the tool exits with an error; any other value is rejected rather
+than silently rounded. Optional -- omitting it keeps the source resolution. The source file itself is
+never modified, only the generated output copy. Minecraft item icons need a square, power-of-two
+texture to render/mip cleanly through `item/generated`; author source art at a larger size for clean
+edges, then use `--resize` to downscale to the real in-game resolution (16 to match vanilla, higher
+for an intentionally higher-res resource-pack look).
+
+RGB and alpha are resized with **different filters** (`resize_preserving_alpha`) -- RGB with LANCZOS
+for quality, alpha with BILINEAR specifically to avoid ringing. LANCZOS has negative side-lobes and
+can overshoot/undershoot near a sharp transparent-to-opaque edge, which showed up as a real bug:
+a 16x16 downscale produced a row at alpha=0 sandwiched between rows trending toward opaque on both
+sides -- a single smooth source edge became a fake double-edge, and `--black-border` rendered it as
+two black bars with a transparent gap between them. BILINEAR is a convex combination of its inputs
+and can't produce a value outside the local source min/max, so it can't ring. Found and fixed
+2026-10-11 from a real user-reported screenshot at `--resize 16 --black-border`.
 
 `--solidify-black` snaps any dark pixel that's partially (not fully) transparent to solid opaque
 black. Anti-aliasing -- either already in the source art, or introduced by `--resize`'s LANCZOS
