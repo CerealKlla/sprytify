@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .venv/
 output/
+
+### Local context repo (not published) ###
+/context/
