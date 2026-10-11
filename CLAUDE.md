@@ -96,11 +96,37 @@ default** -- deliberately opt-in, since a model meant to be one case inside a ha
 switched by a data component) must NOT each get their own top-level definition file; only pass this
 flag for a plain one-model-per-item-id case.
 
+`--resolutions 16,32,64,128` (any comma-separated power-of-2 list) generates every size in one pass,
+each written as the **correct kind of artifact for what it is** -- this is the actual mechanism behind
+"ship higher-res icons for players with an HD texture pack," not a bundled alternate-resolution asset
+inside the mod itself:
+- The **smallest** size is written exactly like `--resize` always has -- a texture + model (+
+  `--item-definition` if passed) under `assets/<namespace>/...`, meant to be copied into the mod's
+  own `src/main/resources`. This is what every player sees by default, with no resource pack applied.
+- Every **larger** size is written into its own `resourcepack_<N>x/` folder -- a complete, real,
+  independently-distributable Minecraft resource pack (gets an auto-generated `pack.mcmeta`,
+  `--pack-format` default 84) containing **only the texture PNG**, nothing else. A resource pack only
+  needs to supply the file paths it wants to override; the model/item-definition JSON stay inherited
+  from whatever the mod itself ships, so they're deliberately not duplicated into the pack folder.
+  This is the exact same mechanism any "Faithful"-style HD pack already uses to override vanilla item
+  textures, applied identically to a modded one -- nothing mod-side needs to change for it to work,
+  since Minecraft resolves texture overrides purely by matching resource path, regardless of
+  resolution (its atlas stitching is per-sprite, not a fixed grid, so mixed resolutions across
+  different items/packs is never a problem).
+- `resourcepack_<N>x/` is a complete, valid pack on its own once zipped -- distribute it as an
+  optional, separate download/toggle (same as any other HD texture pack a player opts into), never
+  merged into the mod jar or auto-applied. Mutually exclusive with `--resize` (pick one).
+- Running this for every item in a batch (e.g. Lyfe's 62 Research Note icons) naturally produces one
+  shared `resourcepack_64x/` (etc.) folder per resolution tier across the whole batch, each call just
+  adding its own texture + idempotently rewriting that folder's `pack.mcmeta` -- call it once per item
+  into the same `--output-dir` and the per-resolution pack folders accumulate correctly.
+
 ## Status
 
 Built 2026-10-11. Flood-fill, resize, edge-cleanup (`--solidify-black`/`--snap-alpha`/
-`--black-border`), `--overlay`, and `--item-definition` all implemented and tested against real
-source art. First real-mod use: Lyfe's 62 Research Note icons (see Lyfe's own
-`context/classes/CraftingOverhaul.md`), generated via direct CLI calls -- that use case predates
-`--item-definition` and used a hand-authored `minecraft:select` model instead, so it doesn't exercise
-this flag.
+`--black-border`), `--overlay`, `--item-definition`, and `--resolutions` (multi-tier + standalone HD
+resource pack generation) all implemented and tested against real source art. First real-mod use:
+Lyfe's 62 Research Note icons (see Lyfe's own `context/classes/CraftingOverhaul.md`), generated via
+direct CLI calls -- that use case predates `--item-definition`/`--resolutions` and used a
+hand-authored `minecraft:select` model at a single resolution instead, so neither flag has been
+exercised on a real mod's assets yet, only on test images.
