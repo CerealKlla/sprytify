@@ -42,7 +42,16 @@ match vanilla, higher for an intentionally higher-res resource-pack look).
 black. Anti-aliasing -- either already in the source art, or introduced by `--resize`'s LANCZOS
 downscaling -- commonly leaves black line edges as a faded, semi-transparent dark gray instead of a
 crisp line; this cleans that up. `--solidify-black-threshold` (default 64) controls how dark a pixel
-must be (max R/G/B value) to count as "black-ish." Applied last, after any resize.
+must be (max R/G/B value) to count as "black-ish." Applied after any resize.
+
+`--snap-alpha` is the color-agnostic generalization of the same fix -- `--solidify-black` only
+touches near-black pixels by design, so a faded edge on a *colored* shape's own silhouette (not
+black line art) survives it untouched. `--snap-alpha` instead snaps every partially-transparent
+pixel to fully opaque (color kept as-is) or fully transparent, based on whether its alpha is at/above
+`--snap-alpha-threshold` (default 128). Applied last, after `--solidify-black`, so any pixel that
+flag already resolved to solid black is left alone. Use this whenever any fringing remains after
+`--solidify-black` alone -- confirmed via a real test image (a blueprint icon with a blue silhouette
+fill) where antialiasing left faded *blue* edge pixels that the black-only check correctly skipped.
 
 ## Status
 
