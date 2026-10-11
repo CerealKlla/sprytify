@@ -71,6 +71,26 @@ def flood_fill_background(img: Image.Image, threshold: int, feather: int) -> Ima
     return out
 
 
+def solidify_black(img: Image.Image, rgb_threshold: int) -> Image.Image:
+    """Snap any dark, partially-transparent pixel to fully opaque black.
+
+    Anti-aliasing (whether in the source art or introduced by --resize's
+    downscaling) commonly leaves black line edges as a faded, semi-transparent
+    dark gray instead of a crisp line. This finds any pixel whose color is at
+    or below the threshold (black-ish) and whose alpha is >0 but <255, and
+    forces it to solid (0, 0, 0, 255).
+    """
+    out = img.convert("RGBA").copy()
+    pixels = out.load()
+    width, height = out.size
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = pixels[x, y]
+            if 0 < a < 255 and max(r, g, b) <= rgb_threshold:
+                pixels[x, y] = (0, 0, 0, 255)
+    return out
+
+
 def power_of_two(value: str) -> int:
     n = int(value)
     if n <= 0 or (n & (n - 1)) != 0:
@@ -95,6 +115,8 @@ def main() -> int:
     parser.add_argument("--threshold", type=int, default=240, help="Min R/G/B value (0-255) to count as background")
     parser.add_argument("--feather", type=int, default=0, help="Soft-alpha falloff band width near the threshold, for anti-aliased edges (0 = hard cutoff)")
     parser.add_argument("--resize", type=power_of_two, default=None, help="Downscale the output to NxN pixels; N must be a power of 2 (e.g. 16, 32, 64, 128). Omit to keep the source resolution. The source file is never modified.")
+    parser.add_argument("--solidify-black", action="store_true", help="Snap any dark, partially-transparent pixel (faded black edges from anti-aliasing) to fully opaque black, for crisper line art.")
+    parser.add_argument("--solidify-black-threshold", type=int, default=64, help="Max R/G/B value (0-255) for a pixel to count as 'black-ish' for --solidify-black (default 64)")
     args = parser.parse_args()
 
     if not args.input.exists():
@@ -106,6 +128,9 @@ def main() -> int:
 
     if args.resize is not None:
         result = result.resize((args.resize, args.resize), Image.Resampling.LANCZOS)
+
+    if args.solidify_black:
+        result = solidify_black(result, args.solidify_black_threshold)
 
     textures_dir = args.output_dir / "assets" / args.namespace / "textures" / "item"
     models_dir = args.output_dir / "assets" / args.namespace / "models" / "item"
