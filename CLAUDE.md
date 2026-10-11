@@ -38,6 +38,12 @@ square, power-of-two texture to render/mip cleanly through `item/generated`; aut
 larger size for clean edges, then use `--resize` to downscale to the real in-game resolution (16 to
 match vanilla, higher for an intentionally higher-res resource-pack look).
 
+`--solidify-black` snaps any dark pixel that's partially (not fully) transparent to solid opaque
+black. Anti-aliasing -- either already in the source art, or introduced by `--resize`'s LANCZOS
+downscaling -- commonly leaves black line edges as a faded, semi-transparent dark gray instead of a
+crisp line; this cleans that up. `--solidify-black-threshold` (default 64) controls how dark a pixel
+must be (max R/G/B value) to count as "black-ish." Applied last, after any resize.
+
 ## Status
 
 Built 2026-10-11. Core flood-fill + model-JSON generation implemented; not yet used on a real asset
